@@ -1,9 +1,4 @@
 <p align="center">
-  <img src="banner.png" width="800"/>
-</p>
-
-<h2 align="center">🐝 Killer Bee Ultimate</h2>
-<h4 align="center">The ultimate all-in-one cybersecurity toolkit</h4><p align="center">
   <img src="https://raw.githubusercontent.com/smilymouth/KillerBee-Ultimate/main/banner.png" width="800"/>
 </p>
 
