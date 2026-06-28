@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/smilymouth/KillerBee-Ultimate/main/banner.png" width="800"/>
+  <img src="https://raw.githubusercontent.com/smilymouth/KillerBee-Ultimate/main/banner2.png" width="800"/>
 </p>
 
 <h1 align="center">🐝 Killer Bee Ultimate</h1>
