@@ -7,26 +7,64 @@ import os
 import getpass
 from colorama import Fore, Style, init
 
-# Initialize colorama
 init(autoreset=True)
 
-# Optional Gemini AI Setup
-try:
-    import google.generativeai as genai
-    use_gemini = input(Fore.YELLOW + "[?] Do you want to use Gemini AI? (y/n): ").strip().lower()
-    if use_gemini == 'y':
-        api_key = input(Fore.YELLOW + "[+] Enter your Gemini API key: ")
-        model_name = input(Fore.YELLOW + "[+] Enter Gemini model name (e.g., gemini-1.5-flash): ")
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name)
-    else:
-        model = None
-except Exception as e:
-    print(Fore.RED + f"[!] Failed to initialize Gemini: {e}")
-    model = None
+model = None
+sudo_pass = None
 
-# Ask for sudo password once
-sudo_pass = getpass.getpass(Fore.YELLOW + "[!] Enter your sudo password for privileged operations: ")
+def setup_gemini():
+    global model
+    try:
+        import google.generativeai as genai
+        use_gemini = input(Fore.YELLOW + "[?] Do you want to use Gemini AI? (y/n): ").strip().lower()
+        if use_gemini == 'y':
+            api_key = input(Fore.YELLOW + "[+] Enter your Gemini API key: ")
+            model_name = input(Fore.YELLOW + "[+] Enter Gemini model name (e.g., gemini-1.5-flash): ")
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(model_name)
+            print(Fore.GREEN + "[+] Gemini AI initialized successfully.")
+        else:
+            model = None
+    except Exception as e:
+        print(Fore.RED + f"[!] Failed to initialize Gemini: {e}")
+        model = None
+
+def setup_sudo():
+    global sudo_pass
+    sudo_pass = getpass.getpass(Fore.YELLOW + "[!] Enter your sudo password for privileged operations: ")
+
+def run_command(cmd_list):
+    try:
+        result = subprocess.run(cmd_list, capture_output=True, text=True)
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(Fore.RED + result.stderr)
+    except FileNotFoundError:
+        print(Fore.RED + f"[-] Command not found: {cmd_list[0]}. Is it installed?")
+    except Exception as e:
+        print(Fore.RED + f"[-] Error: {e}")
+
+def run_sudo_cmd(cmd_list):
+    try:
+        result = subprocess.run(
+            ['sudo', '-S'] + cmd_list,
+            input=sudo_pass + '\n',
+            text=True,
+            capture_output=True
+        )
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr and 'sudo' not in result.stderr.lower():
+            print(Fore.RED + result.stderr)
+    except FileNotFoundError:
+        print(Fore.RED + f"[-] Command not found: {cmd_list[0]}. Is it installed?")
+    except Exception as e:
+        print(Fore.RED + f"[-] Error: {e}")
+
+def is_tool_installed(tool):
+    result = subprocess.run(["which", tool], capture_output=True, text=True)
+    return result.returncode == 0
 
 def print_banner():
     print(Fore.MAGENTA + """
@@ -36,7 +74,7 @@ def print_banner():
 ██╔═██╗ ██║██║     ██║     ██╔══╝  ██╔══██╗    ██╔══██╗██╔══╝  ██╔══╝
 ██║  ██╗██║███████╗███████╗███████╗██║  ██║    ██████╔╝███████╗███████╗
 ╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝╚═╝  ╚═╝    ╚═════╝ ╚══════╝╚══════╝
-                       Killer Bee Ultimate 
+                       🐝 Killer Bee Ultimate 🐝
 """ + Style.RESET_ALL)
 
 def ask_gemini():
@@ -62,71 +100,113 @@ def whois_lookup():
 
 def dns_lookup():
     domain = input("Enter domain: ")
-    os.system(f"nslookup {domain}")
+    if not is_tool_installed("nslookup"):
+        print(Fore.RED + "[-] nslookup not installed.")
+        return
+    run_command(["nslookup", domain])
 
 def reverse_ip():
     ip = input("Enter IP: ")
-    os.system(f"host {ip}")
+    if not is_tool_installed("host"):
+        print(Fore.RED + "[-] host command not installed.")
+        return
+    run_command(["host", ip])
 
 def subdomain_finder():
     domain = input("Enter domain: ")
     if not os.path.isfile("subdomains.txt"):
-        print(Fore.RED + "[-] subdomains.txt missing!")
+        print(Fore.RED + "[-] subdomains.txt not found in current directory!")
         return
     with open("subdomains.txt") as f:
         subs = f.read().splitlines()
+    print(Fore.YELLOW + f"[*] Scanning {len(subs)} subdomains for {domain}...\n")
+    found = 0
     for sub in subs:
-        full = f"{sub}.{domain}"
+        if not sub.strip():
+            continue
+        full = f"{sub.strip()}.{domain}"
         try:
             ip = socket.gethostbyname(full)
             print(Fore.GREEN + f"[+] {full} -> {ip}")
-        except:
+            found += 1
+        except socket.gaierror:
             pass
+        except KeyboardInterrupt:
+            print(Fore.YELLOW + "\n[!] Scan interrupted by user.")
+            break
+    print(Fore.CYAN + f"\n[*] Done. Found {found} subdomains.")
 
 def email_harvest():
     domain = input("Enter domain: ")
-    print(Fore.YELLOW + "[*] Simulated: Use tools like theHarvester or hunter.io")
+    print(Fore.YELLOW + f"[*] For email harvesting on {domain}, use:")
+    print(Fore.CYAN + f"    theHarvester -d {domain} -b all")
+    print(Fore.CYAN + f"    Or visit: https://hunter.io/search/{domain}")
 
 def ip_geolocation():
     ip = input("Enter IP: ")
     try:
-        r = requests.get(f"https://ipinfo.io/{ip}/json")
-        print(r.json())
-    except Exception as e:
-        print(Fore.RED + str(e))
+        r = requests.get(f"https://ipinfo.io/{ip}/json", timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        for key, value in data.items():
+            print(Fore.GREEN + f"  {key:<12}: {value}")
+    except requests.exceptions.Timeout:
+        print(Fore.RED + "[-] Request timed out.")
+    except requests.exceptions.RequestException as e:
+        print(Fore.RED + f"[-] Request failed: {e}")
 
 # Scanning Tools
 
-def run_sudo_cmd(cmd):
-    return subprocess.run(['sudo', '-S'] + cmd, input=sudo_pass + '\n', text=True, capture_output=True)
-
 def nmap_scan():
+    if not is_tool_installed("nmap"):
+        print(Fore.RED + "[-] nmap not installed. Run: sudo apt install nmap")
+        return
     target = input("Enter target IP/domain: ")
-    result = run_sudo_cmd(['nmap', '-sS', '-T4', target])
-    print(result.stdout)
+    print(Fore.YELLOW + f"[*] Running Nmap SYN scan on {target}...")
+    run_sudo_cmd(['nmap', '-sS', '-T4', target])
 
 def masscan_scan():
+    if not is_tool_installed("masscan"):
+        print(Fore.RED + "[-] masscan not installed. Run: sudo apt install masscan")
+        return
     target = input("Enter IP: ")
-    result = run_sudo_cmd(['masscan', target, '-p1-1000', '--rate=1000'])
-    print(result.stdout)
+    print(Fore.YELLOW + f"[*] Running Masscan on {target} (ports 1-1000)...")
+    run_sudo_cmd(['masscan', target, '-p1-1000', '--rate=1000'])
 
 def tcping_scan():
+    if not is_tool_installed("tcping"):
+        print(Fore.RED + "[-] tcping not installed.")
+        print(Fore.YELLOW + "[*] Install: sudo apt install tcping  (or use ncat/nmap for TCP checks)")
+        return
     host = input("Enter host: ")
-    port = input("Port (default 80): ") or "80"
-    os.system(f"tcping {host} {port}")
+    port = input("Port (default 80): ").strip() or "80"
+    run_command(["tcping", host, port])
 
 def nikto_scan():
+    if not is_tool_installed("nikto"):
+        print(Fore.RED + "[-] nikto not installed. Run: sudo apt install nikto")
+        return
     url = input("Enter target URL: ")
-    os.system(f"nikto -h {url}")
+    run_command(["nikto", "-h", url])
 
 def curl_status():
+    if not is_tool_installed("curl"):
+        print(Fore.RED + "[-] curl not installed.")
+        return
     url = input("Enter URL: ")
-    os.system(f"curl -I {url}")
+    run_command(["curl", "-I", url])
 
 def openvas_scan():
-    print(Fore.YELLOW + "[*] OpenVAS setup required externally.")
+    print(Fore.YELLOW + "[*] OpenVAS requires external setup.")
+    print(Fore.CYAN + "    Install: sudo apt install openvas")
+    print(Fore.CYAN + "    Setup:   sudo gvm-setup")
+    print(Fore.CYAN + "    Start:   sudo gvm-start")
 
 def main_menu():
+    print_banner()
+    setup_gemini()
+    setup_sudo()
+
     while True:
         print_banner()
         print(Fore.CYAN + """
@@ -135,7 +215,7 @@ def main_menu():
 [3] Ask Gemini
 [4] Exit
 """)
-        choice = input("Choice: ")
+        choice = input("Choice: ").strip()
 
         if choice == '1':
             print(Fore.BLUE + """
@@ -147,7 +227,7 @@ def main_menu():
 [6] IP Geolocation
 [7] Back to Main Menu
 """)
-            tool = input("Select: ")
+            tool = input("Select: ").strip()
             tools = {
                 '1': whois_lookup,
                 '2': dns_lookup,
@@ -156,8 +236,13 @@ def main_menu():
                 '5': email_harvest,
                 '6': ip_geolocation
             }
-            if tool == '7': continue
-            tools.get(tool, lambda: print("Invalid"))()
+            if tool == '7':
+                continue
+            action = tools.get(tool)
+            if action:
+                action()
+            else:
+                print(Fore.RED + "[-] Invalid choice.")
 
         elif choice == '2':
             print(Fore.BLUE + """
@@ -169,7 +254,7 @@ def main_menu():
 [6] OpenVAS Scan
 [7] Back to Main Menu
 """)
-            tool = input("Select: ")
+            tool = input("Select: ").strip()
             tools = {
                 '1': nmap_scan,
                 '2': masscan_scan,
@@ -178,16 +263,23 @@ def main_menu():
                 '5': curl_status,
                 '6': openvas_scan
             }
-            if tool == '7': continue
-            tools.get(tool, lambda: print("Invalid"))()
+            if tool == '7':
+                continue
+            action = tools.get(tool)
+            if action:
+                action()
+            else:
+                print(Fore.RED + "[-] Invalid choice.")
 
         elif choice == '3':
             ask_gemini()
+
         elif choice == '4':
             print(Fore.GREEN + "[*] Exiting Killer Bee. Stay Safe!")
-            break
+            sys.exit(0)
+
         else:
-            print(Fore.RED + "Invalid choice")
+            print(Fore.RED + "[-] Invalid choice.")
 
 if __name__ == "__main__":
     main_menu()
